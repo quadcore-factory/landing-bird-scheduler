@@ -46,7 +46,8 @@ final class Landing_Bird_Scheduler
     public static function sanitize_options($input): array
     {
         $d = self::defaults(); $input = is_array($input) ? $input : [];
-        $tz = is_scalar($input['timezone'] ?? '') ? (string) $input['timezone'] : '';
+        $timezone_input = $input['timezone'] ?? '';
+        $tz = is_scalar($timezone_input) ? (string) $timezone_input : '';
         try { new DateTimeZone($tz); } catch (Exception $e) { $tz = $d['timezone']; }
         $has_days = array_key_exists('days', $input);
         $days = array_values(array_intersect([1,2,3,4,5,6,7], array_map('intval', (array) ($input['days'] ?? []))));
