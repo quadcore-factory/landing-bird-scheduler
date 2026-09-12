@@ -61,7 +61,11 @@ final class Landing_Bird_Scheduler
         $raw = isset($input['overrides_json']) ? json_decode(wp_unslash((string) $input['overrides_json']), true) : ($input['overrides'] ?? []);
         foreach ((array) $raw as $date => $open) {
             $parts = explode('-', (string) $date);
-            if (count($parts) === 3 && checkdate((int) $parts[1], (int) $parts[2], (int) $parts[0])) $overrides[$date] = !empty($open);
+            if (count($parts) === 3 && checkdate((int) $parts[1], (int) $parts[2], (int) $parts[0])) {
+                if (is_bool($open)) $overrides[$date] = $open;
+                elseif (is_numeric($open)) $overrides[$date] = (bool) $open;
+                elseif (is_string($open) && in_array(strtolower($open), ['true', 'false'], true)) $overrides[$date] = 'true' === strtolower($open);
+            }
         }
         $max_duration = min(480, max(30, absint($input['max_duration'] ?? $d['max_duration'])));
         $max_duration -= $max_duration % 30;
@@ -111,7 +115,7 @@ final class Landing_Bird_Scheduler
             return null;
         }
     }
-    private function valid_window(DateTimeImmutable $start, int $duration): bool { $o=self::options(); $now=$this->now(); $date=$start->format('Y-m-d'); $open=array_key_exists($date,$o['overrides']) ? $o['overrides'][$date] : in_array((int)$start->format('N'),$o['days'],true); return $duration >= 30 && $duration % 30 === 0 && $duration <= (int)$o['max_duration'] && (int)$start->format('i') % 30 === 0 && $start >= $now->modify('+' . (int)$o['min_notice'] . ' hours') && $start <= $now->modify('+' . (int)$o['max_days'] . ' days') && $open && $start->format('H:i') >= $o['start'] && $start->modify('+' . $duration . ' minutes')->format('H:i') <= $o['end'] && !($o['break_start'] && $o['break_end'] && $start->format('H:i') < $o['break_end'] && $start->modify('+' . $duration . ' minutes')->format('H:i') > $o['break_start']); }
+    private function valid_window(DateTimeImmutable $start, int $duration): bool { $o=self::options(); $now=$this->now(); $date=$start->format('Y-m-d'); $open=array_key_exists($date,$o['overrides']) ? $o['overrides'][$date] : in_array((int)$start->format('N'),$o['days'],true); return $duration >= 30 && $duration % 30 === 0 && $duration <= (int)$o['max_duration'] && (int)$start->format('i') % 30 === 0 && '00' === $start->format('s') && $start >= $now->modify('+' . (int)$o['min_notice'] . ' hours') && $start <= $now->modify('+' . (int)$o['max_days'] . ' days') && $open && $start->format('H:i') >= $o['start'] && $start->modify('+' . $duration . ' minutes')->format('H:i') <= $o['end'] && !($o['break_start'] && $o['break_end'] && $start->format('H:i') < $o['break_end'] && $start->modify('+' . $duration . ' minutes')->format('H:i') > $o['break_start']); }
     private function conflicts(string $start,string $end,int $ignore=0): bool { global $wpdb; return (bool)$wpdb->get_var($wpdb->prepare("SELECT id FROM {$this->table()} WHERE id != %d AND (status IN ('confirmed_paid','confirmed_external','rescheduled') OR (status='pending_payment' AND (hold_expires_at IS NULL OR hold_expires_at >= UTC_TIMESTAMP()))) AND start_at < %s AND end_at > %s LIMIT 1",$ignore,$end,$start)); }
     public function slots(WP_REST_Request $request): WP_REST_Response { $date=sanitize_text_field((string)$request->get_param('date')); $base=$this->parsed($date.' 00:00:00'); $o=self::options(); $out=[]; if (!$base || (array_key_exists($date,$o['overrides']) ? !$o['overrides'][$date] : !in_array((int)$base->format('N'),$o['days'],true))) return new WP_REST_Response(['slots'=>[]]); $first=explode(':',$o['start']); $last=explode(':',$o['end']); $from=((int)$first[0])*60+(int)$first[1]; $to=((int)$last[0])*60+(int)$last[1]; for($m=$from;$m<$to;$m+=30){$s=$base->setTime(0,0)->modify('+' . $m . ' minutes'); for($d=30;$d<=(int)$o['max_duration'];$d+=30){if($this->valid_window($s,$d)&&!$this->conflicts($s->format('Y-m-d H:i:s'),$s->modify('+' . $d . ' minutes')->format('Y-m-d H:i:s'))) $out[]=['start'=>$s->format(DateTimeInterface::ATOM),'duration'=>$d];}} return new WP_REST_Response(['slots'=>$out]); }
     public function create_booking(WP_REST_Request $request): WP_REST_Response
@@ -238,7 +242,7 @@ final class Landing_Bird_Scheduler
         $d = absint($p['duration'] ?? 0);
         $override = !empty($p['override']);
         $max_duration = (int) self::options()['max_duration'];
-        if (!$s || $d < 30 || $d % 30 !== 0 || $d > $max_duration || (!$override && !$this->valid_window($s, $d))) return new WP_REST_Response(['message' => 'Invalid or conflicting booking.'], 400);
+        if (!$s || '00' !== $s->format('s') || $d < 30 || $d % 30 !== 0 || $d > $max_duration || (!$override && !$this->valid_window($s, $d))) return new WP_REST_Response(['message' => 'Invalid or conflicting booking.'], 400);
         $email = sanitize_email($p['email'] ?? '');
         if (!$email || !is_email($email)) return new WP_REST_Response(['message' => 'A valid client email is required.'], 400);
         $user = get_user_by('email', $email);
@@ -279,13 +283,20 @@ final class Landing_Bird_Scheduler
         $p = (array) $request->get_json_params();
         if (!$p) $p = (array) $request->get_params();
         $status = sanitize_key($p['status'] ?? '');
-        if (!in_array($status, self::STATUSES, true) || !$this->lock()) return new WP_REST_Response(['message' => 'Invalid status transition.'], 400);
+        if (!in_array($status, self::STATUSES, true)) return new WP_REST_Response(['message' => 'Invalid status transition.'], 400);
+        if (!$this->lock()) return new WP_REST_Response(['message' => 'Booking is temporarily busy; try again.'], 503);
         try {
             global $wpdb;
             $row = $wpdb->get_row($wpdb->prepare("SELECT status FROM {$this->table()} WHERE id=%d", $id));
             $allowed = $this->admin_transitions();
             if (!$row || !isset($allowed[$row->status]) || !in_array($status, $allowed[$row->status], true)) return new WP_REST_Response(['message' => 'Invalid status transition.'], 400);
-            $updated = $wpdb->update($this->table(), ['status' => $status, 'admin_note' => sanitize_textarea_field($p['admin_note'] ?? ''), 'updated_at' => current_time('mysql', true)], ['id' => $id], ['%s', '%s', '%s'], ['%d']);
+            $values = ['status' => $status, 'updated_at' => current_time('mysql', true)];
+            $formats = ['%s', '%s'];
+            if (array_key_exists('admin_note', $p)) {
+                $values['admin_note'] = sanitize_textarea_field($p['admin_note']);
+                $formats[] = '%s';
+            }
+            $updated = $wpdb->update($this->table(), $values, ['id' => $id], $formats, ['%d']);
             if (false === $updated) return new WP_REST_Response(['message' => 'Unable to update the booking.'], 500);
             if (in_array($status, ['refund_requested', 'refund_pending', 'refunded'], true)) do_action('lb_scheduler_operational_notice', $id);
             return new WP_REST_Response(['id' => $id, 'status' => $status]);
