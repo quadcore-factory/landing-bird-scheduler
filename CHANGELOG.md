@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.4
+- Inherit the active theme's WordPress color, typography, surface, and spacing tokens, with a `--lb-scheduler-accent` override for site-specific branding.
+
 ## 0.1.3
 - Render session times in a consistent 24-hour Spanish format and mark the booking surfaces with the Spanish locale.
 

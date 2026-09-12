@@ -1,13 +1,15 @@
 .lb-scheduler,
 .lb-scheduler-sessions {
-    --lb-ink: #182230;
-    --lb-muted: #667085;
-    --lb-accent: #6557d9;
-    --lb-accent-strong: #5144c6;
-    --lb-accent-soft: #f2f0ff;
+    --lb-ink: var(--wp--preset--color--contrast, #182230);
+    --lb-muted: var(--wp--preset--color--accent-4, #667085);
+    --lb-accent: var(--lb-scheduler-accent, var(--wp--preset--color--contrast, #6557d9));
+    --lb-accent-strong: var(--wp--preset--color--accent-3, var(--lb-accent));
+    --lb-accent-soft: var(--wp--preset--color--accent-5, #f2f0ff);
     --lb-border: #e4e7ec;
-    --lb-surface: #ffffff;
-    --lb-subtle: #f8f9fc;
+    --lb-surface: var(--wp--preset--color--base, #ffffff);
+    --lb-subtle: var(--wp--preset--color--accent-5, #f8f9fc);
+    --lb-radius-lg: var(--wp--preset--spacing--30, 1.25rem);
+    --lb-radius-md: var(--wp--preset--spacing--20, .65rem);
     box-sizing: border-box;
     width: 100%;
     max-width: 44rem;
@@ -15,10 +17,10 @@
     padding: clamp(1.25rem, 5vw, 2rem);
     overflow: hidden;
     border: 1px solid var(--lb-border);
-    border-radius: 1.5rem;
+    border-radius: var(--lb-radius-lg);
     background: var(--lb-surface);
     color: var(--lb-ink);
-    box-shadow: 0 1.5rem 3.5rem rgba(24, 34, 48, .08);
+    box-shadow: var(--wp--preset--shadow--natural, none);
     font-family: inherit;
 }
 
@@ -44,10 +46,8 @@
 .lb-scheduler h2 {
     margin: 0 0 .55rem;
     color: var(--lb-ink);
-    font-size: clamp(1.65rem, 6vw, 2.2rem);
-    font-weight: 750;
-    letter-spacing: -.035em;
-    line-height: 1.08;
+    font-size: var(--wp--preset--font-size--x-large, clamp(1.65rem, 6vw, 2.2rem));
+    line-height: 1.12;
 }
 
 .lb-scheduler__message {
@@ -65,9 +65,10 @@
     margin: 0 0 1.35rem;
     padding: .8rem .9rem;
     border: 1px solid #e5e1ff;
+    border: 1px solid color-mix(in srgb, var(--lb-accent) 24%, var(--lb-surface));
     border-radius: .85rem;
     background: var(--lb-accent-soft);
-    color: #44398e;
+    color: var(--lb-accent-strong);
     font-size: .84rem;
     line-height: 1.35;
 }
@@ -86,6 +87,7 @@
     height: 1.55rem;
     border-radius: 50%;
     background: rgba(101, 87, 217, .14);
+    background: color-mix(in srgb, var(--lb-accent) 14%, transparent);
     color: var(--lb-accent-strong);
     font-size: .8rem;
     font-weight: 800;
@@ -142,7 +144,7 @@
     margin-top: .12rem;
     padding: .7rem .8rem;
     border: 1px solid #cbd3df;
-    border-radius: .7rem;
+    border-radius: var(--lb-radius-md);
     outline: 0;
     background: var(--lb-surface);
     color: var(--lb-ink);
@@ -158,6 +160,7 @@
 .lb-scheduler input:focus {
     border-color: var(--lb-accent);
     box-shadow: 0 0 0 .22rem rgba(101, 87, 217, .16);
+    box-shadow: 0 0 0 .22rem color-mix(in srgb, var(--lb-accent) 16%, transparent);
 }
 
 .lb-scheduler__slots-header {
@@ -190,9 +193,7 @@
 .lb-scheduler h3 {
     margin: 0;
     color: var(--lb-ink);
-    font-size: 1.05rem;
-    font-weight: 750;
-    letter-spacing: -.01em;
+    font-size: var(--wp--preset--font-size--medium, 1.05rem);
 }
 
 .lb-scheduler__timezone {
@@ -227,8 +228,9 @@
     gap: .15rem;
     padding: .72rem .8rem;
     border: 1px solid #ded9fa;
-    border-radius: .85rem;
-    background: #fbfaff;
+    border: 1px solid color-mix(in srgb, var(--lb-accent) 22%, var(--lb-surface));
+    border-radius: var(--lb-radius-md);
+    background: color-mix(in srgb, var(--lb-accent) 3%, var(--lb-surface));
     color: var(--lb-accent-strong);
     text-align: left;
     transition: transform .15s ease, border-color .15s ease, background .15s ease, box-shadow .15s ease;
@@ -237,7 +239,9 @@
 .lb-scheduler__slot:hover {
     transform: translateY(-1px);
     border-color: #b8aff3;
+    border-color: color-mix(in srgb, var(--lb-accent) 48%, var(--lb-surface));
     background: #f6f4ff;
+    background: color-mix(in srgb, var(--lb-accent) 8%, var(--lb-surface));
     box-shadow: 0 .45rem 1rem rgba(81, 68, 198, .1);
 }
 
@@ -245,6 +249,7 @@
 .lb-scheduler-session__action:focus-visible,
 .lb-scheduler__login-link:focus-visible {
     outline: 3px solid rgba(101, 87, 217, .28);
+    outline: 3px solid color-mix(in srgb, var(--lb-accent) 28%, transparent);
     outline-offset: 2px;
 }
 
@@ -252,7 +257,7 @@
 .lb-scheduler__slot.is-selected:hover {
     border-color: var(--lb-accent);
     background: var(--lb-accent);
-    color: #fff;
+    color: var(--lb-surface);
     box-shadow: 0 .45rem 1rem rgba(81, 68, 198, .2);
 }
 
