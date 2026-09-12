@@ -100,7 +100,7 @@ final class Landing_Bird_Scheduler
         register_rest_route('lb-scheduler/v1','/admin/bookings/(?P<id>\d+)', ['methods'=>'PATCH','callback'=>[$this,'admin_update_booking'],'permission_callback'=>function(){return current_user_can('manage_options');}]);
     }
 
-    private function woocommerce_ready(): bool { if ((float) self::options()['price'] <= 0 || !class_exists('WooCommerce') || !function_exists('wc_create_order') || !class_exists('WC_Payment_Gateways')) return false; foreach (WC_Payment_Gateways::instance()->get_payment_gateways() as $gateway) if (isset($gateway->enabled) && 'yes' === $gateway->enabled) return true; return false; }
+    private function woocommerce_ready(): bool { if ((float) self::options()['price'] <= 0 || !class_exists('WooCommerce') || !function_exists('wc_create_order')) return false; $gateways = function_exists('WC') && WC()->payment_gateways() ? WC()->payment_gateways()->get_available_payment_gateways() : []; return (bool) $gateways; }
     private function table(): string { global $wpdb; return $wpdb->prefix . 'lb_scheduler_bookings'; }
     private function lock(): bool { global $wpdb; return (bool) $wpdb->get_var("SELECT GET_LOCK('lb_scheduler_booking',5)"); }
     private function unlock(): void { global $wpdb; $wpdb->query("SELECT RELEASE_LOCK('lb_scheduler_booking')"); }

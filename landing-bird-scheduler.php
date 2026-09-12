@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Landing Bird Scheduler
  * Description: A lean, WooCommerce-backed booking calendar for one generic service.
- * Version: 0.1.0
+ * Version: 0.1.1
  * Requires at least: 6.4
  * Requires PHP: 7.4
  * Requires Plugins: woocommerce
@@ -13,7 +13,7 @@
  */
 
 defined('ABSPATH') || exit;
-define('LB_SCHEDULER_VERSION', '0.1.0');
+define('LB_SCHEDULER_VERSION', '0.1.1');
 define('LB_SCHEDULER_FILE', __FILE__);
 require_once __DIR__ . '/includes/class-landing-bird-scheduler.php';
 
