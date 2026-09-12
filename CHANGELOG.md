@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.3
+- Render session times in a consistent 24-hour Spanish format and mark the booking surfaces with the Spanish locale.
+
 ## 0.1.2
 - Refresh the public booking and session screens with a mobile-first card layout, clearer states, accessible controls, and localized session labels.
 

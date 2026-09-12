@@ -317,7 +317,7 @@ final class Landing_Bird_Scheduler
             ? '<div class="lb-scheduler__notice lb-scheduler__notice--ready"><span class="lb-scheduler__notice-icon" aria-hidden="true">✓</span><span>Sesión iniciada. Elige un horario para continuar.</span></div>'
             : '<div class="lb-scheduler__notice"><span class="lb-scheduler__notice-icon" aria-hidden="true">1</span><span>Elige tu horario y después inicia sesión para reservarlo.</span><a class="lb-scheduler__login-link" href="' . esc_url($login) . '">Iniciar sesión</a></div>';
 
-        return '<section class="lb-scheduler" data-lb-scheduler>'
+        return '<section class="lb-scheduler" lang="es-MX" data-lb-scheduler>'
             . '<div class="lb-scheduler__header">'
             . '<p class="lb-scheduler__eyebrow">Landing Bird · Agenda</p>'
             . '<h2>Reserva tu sesión</h2>'
@@ -341,7 +341,7 @@ final class Landing_Bird_Scheduler
             return '<section class="lb-scheduler-sessions lb-scheduler-sessions--locked"><div class="lb-scheduler__header"><p class="lb-scheduler__eyebrow">Tu agenda</p><h2>Mis sesiones</h2><p class="lb-scheduler__message">Consulta aquí tus próximas sesiones y tu historial.</p></div><div class="lb-scheduler__notice"><span class="lb-scheduler__notice-icon" aria-hidden="true">↗</span><span>Inicia sesión para consultar tus reservas.</span><a class="lb-scheduler__login-link" href="' . esc_url($login) . '">Iniciar sesión</a></div></section>';
         }
         $this->assets();
-        return '<section class="lb-scheduler-sessions" data-lb-sessions><div class="lb-scheduler__header"><p class="lb-scheduler__eyebrow">Tu agenda</p><h2>Mis sesiones</h2><p class="lb-scheduler__message">Consulta tus próximas sesiones y tu historial.</p></div><div class="lb-scheduler-sessions__list" data-lb-session-list aria-live="polite" aria-atomic="true"><p class="lb-scheduler__loading">Cargando sesiones…</p></div></section>';
+        return '<section class="lb-scheduler-sessions" lang="es-MX" data-lb-sessions><div class="lb-scheduler__header"><p class="lb-scheduler__eyebrow">Tu agenda</p><h2>Mis sesiones</h2><p class="lb-scheduler__message">Consulta tus próximas sesiones y tu historial.</p></div><div class="lb-scheduler-sessions__list" data-lb-session-list aria-live="polite" aria-atomic="true"><p class="lb-scheduler__loading">Cargando sesiones…</p></div></section>';
     }
     public function bookings_page(): void
     {

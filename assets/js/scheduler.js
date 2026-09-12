@@ -82,7 +82,7 @@
         if (isNaN(parsed.getTime())) {
             return value.slice(11, 16);
         }
-        return new Intl.DateTimeFormat('es-MX', { hour: '2-digit', minute: '2-digit' }).format(parsed);
+        return new Intl.DateTimeFormat('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false }).format(parsed);
     }
 
     function formatSessionDate(value) {
@@ -95,7 +95,8 @@
             day: 'numeric',
             month: 'short',
             hour: '2-digit',
-            minute: '2-digit'
+            minute: '2-digit',
+            hour12: false
         }).format(parsed);
     }
 
