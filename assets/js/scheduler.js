@@ -55,9 +55,10 @@
                 slots.textContent = 'Selecciona una fecha.';
                 return;
             }
-            slots.textContent = 'Cargando…';
+            slots.className = 'lb-scheduler__slots lb-scheduler__slots--loading';
+            slots.textContent = 'Cargando horarios…';
             request('slots?date=' + encodeURIComponent(date.value)).then(function (data) {
-                while (slots.firstChild) slots.removeChild(slots.firstChild);
+                while (slots.firstChild) slots.removeChild(slots.firstChild); slots.className = 'lb-scheduler__slots';
                 if (!data.slots || !data.slots.length) {
                     slots.textContent = 'No hay horarios disponibles para esta fecha.';
                     return;
@@ -85,7 +86,7 @@
                     slots.appendChild(button);
                 });
             }).catch(function (error) {
-                slots.textContent = error.message;
+                slots.className = 'lb-scheduler__slots'; slots.textContent = error.message;
             });
         }
 
