@@ -304,8 +304,45 @@ final class Landing_Bird_Scheduler
             $this->unlock();
         }
     }
-    public function booking_shortcode(): string { $this->assets(); return '<section class="lb-scheduler" data-lb-scheduler><div class="lb-scheduler__header"><p class="lb-scheduler__eyebrow">Agenda tu tiempo</p><h2>Reserva tu sesión</h2><p class="lb-scheduler__message">Elige una fecha y un horario. Necesitarás iniciar sesión para continuar.</p></div><div class="lb-scheduler__controls"><label class="lb-scheduler__field"><span>Fecha</span><input type="date" data-lb-date></label><label class="lb-scheduler__field"><span>Teléfono <small>(opcional)</small></span><input type="tel" data-lb-phone autocomplete="tel"></label></div><div class="lb-scheduler__slots" data-lb-slots aria-live="polite"><p class="lb-scheduler__empty">Selecciona una fecha para ver horarios.</p></div></section>'; }
-    public function sessions_shortcode(): string { if(!is_user_logged_in()) return '<p class="lb-scheduler__login">Inicia sesión para ver tus sesiones.</p>'; $this->assets(); return '<section class="lb-scheduler-sessions" data-lb-sessions><div class="lb-scheduler__header"><p class="lb-scheduler__eyebrow">Tu agenda</p><h2>Mis sesiones</h2><p class="lb-scheduler__message">Consulta tus próximas sesiones y tu historial.</p></div><div class="lb-scheduler-sessions__list" data-lb-session-list aria-live="polite"><p class="lb-scheduler__loading">Cargando sesiones…</p></div></section>'; }
+    public function booking_shortcode(): string
+    {
+        $this->assets();
+        $options = self::options();
+        $timezone = new DateTimeZone($options['timezone']);
+        $now = new DateTimeImmutable('now', $timezone);
+        $min_date = $now->modify('+' . (int) $options['min_notice'] . ' hours')->format('Y-m-d');
+        $max_date = $now->modify('+' . (int) $options['max_days'] . ' days')->format('Y-m-d');
+        $login = wp_login_url(get_permalink() ?: home_url('/'));
+        $account_status = is_user_logged_in()
+            ? '<div class="lb-scheduler__notice lb-scheduler__notice--ready"><span class="lb-scheduler__notice-icon" aria-hidden="true">✓</span><span>Sesión iniciada. Elige un horario para continuar.</span></div>'
+            : '<div class="lb-scheduler__notice"><span class="lb-scheduler__notice-icon" aria-hidden="true">1</span><span>Elige tu horario y después inicia sesión para reservarlo.</span><a class="lb-scheduler__login-link" href="' . esc_url($login) . '">Iniciar sesión</a></div>';
+
+        return '<section class="lb-scheduler" data-lb-scheduler>'
+            . '<div class="lb-scheduler__header">'
+            . '<p class="lb-scheduler__eyebrow">Landing Bird · Agenda</p>'
+            . '<h2>Reserva tu sesión</h2>'
+            . '<p class="lb-scheduler__message">Encuentra un momento que te funcione y reserva en pocos pasos.</p>'
+            . '</div>'
+            . $account_status
+            . '<div class="lb-scheduler__controls">'
+            . '<label class="lb-scheduler__field"><span class="lb-scheduler__label">1. Elige una fecha</span><span class="lb-scheduler__hint">Desde ' . esc_html($min_date) . '</span><input type="date" data-lb-date min="' . esc_attr($min_date) . '" max="' . esc_attr($max_date) . '" required></label>'
+            . '<label class="lb-scheduler__field"><span class="lb-scheduler__label">Teléfono <small>(opcional)</small></span><span class="lb-scheduler__hint">Para avisarte de cambios</span><input type="tel" data-lb-phone autocomplete="tel" inputmode="tel" placeholder="55 1234 5678"></label>'
+            . '</div>'
+            . '<div class="lb-scheduler__slots-header"><div><span class="lb-scheduler__step">2</span><h3>Elige un horario</h3></div><span class="lb-scheduler__timezone">Hora local · ' . esc_html($options['timezone']) . '</span></div>'
+            . '<div class="lb-scheduler__slots" data-lb-slots aria-live="polite" aria-atomic="true"><p class="lb-scheduler__empty">Selecciona una fecha para ver horarios.</p></div>'
+            . '<p class="lb-scheduler__footnote">Las sesiones duran 30, 60 o 90 minutos. El pago se realiza de forma segura en el siguiente paso.</p>'
+            . '</section>';
+    }
+
+    public function sessions_shortcode(): string
+    {
+        $login = wp_login_url(get_permalink() ?: home_url('/'));
+        if (!is_user_logged_in()) {
+            return '<section class="lb-scheduler-sessions lb-scheduler-sessions--locked"><div class="lb-scheduler__header"><p class="lb-scheduler__eyebrow">Tu agenda</p><h2>Mis sesiones</h2><p class="lb-scheduler__message">Consulta aquí tus próximas sesiones y tu historial.</p></div><div class="lb-scheduler__notice"><span class="lb-scheduler__notice-icon" aria-hidden="true">↗</span><span>Inicia sesión para consultar tus reservas.</span><a class="lb-scheduler__login-link" href="' . esc_url($login) . '">Iniciar sesión</a></div></section>';
+        }
+        $this->assets();
+        return '<section class="lb-scheduler-sessions" data-lb-sessions><div class="lb-scheduler__header"><p class="lb-scheduler__eyebrow">Tu agenda</p><h2>Mis sesiones</h2><p class="lb-scheduler__message">Consulta tus próximas sesiones y tu historial.</p></div><div class="lb-scheduler-sessions__list" data-lb-session-list aria-live="polite" aria-atomic="true"><p class="lb-scheduler__loading">Cargando sesiones…</p></div></section>';
+    }
     public function bookings_page(): void
     {
         if (!current_user_can('manage_options')) return;

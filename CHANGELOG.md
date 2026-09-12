@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.2
+- Refresh the public booking and session screens with a mobile-first card layout, clearer states, accessible controls, and localized session labels.
+
 ## 0.1.1
 - Use the WooCommerce available-gateway API supported by current WooCommerce releases.
 
