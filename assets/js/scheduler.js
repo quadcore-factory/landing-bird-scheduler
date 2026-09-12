@@ -46,6 +46,7 @@
 
     document.querySelectorAll('[data-lb-scheduler]').forEach(function (root) {
         var date = root.querySelector('[data-lb-date]');
+        var phone = root.querySelector('[data-lb-phone]');
         var slots = root.querySelector('[data-lb-slots]');
         var selection = pendingSelection();
 
@@ -75,7 +76,7 @@
                             loginForSlot(slot);
                             return;
                         }
-                        request('bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start: slot.start, duration: slot.duration }) }).then(function (data) {
+                        request('bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start: slot.start, duration: slot.duration, phone: phone ? phone.value : '' }) }).then(function (data) {
                             window.location.href = data.payment_url;
                         }).catch(function (error) {
                             addError(slots, error.message);

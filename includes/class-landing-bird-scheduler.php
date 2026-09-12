@@ -133,7 +133,7 @@ final class Landing_Bird_Scheduler
             $user = wp_get_current_user();
             $now = current_time('mysql', true);
             $hold_expires = gmdate('Y-m-d H:i:s', time() + 900);
-            $inserted = $wpdb->insert($this->table(), ['user_id' => $user->ID, 'email' => sanitize_email($user->user_email), 'start_at' => $start->format('Y-m-d H:i:s'), 'end_at' => $end->format('Y-m-d H:i:s'), 'duration' => $duration, 'status' => 'pending_payment', 'timezone' => self::options()['timezone'], 'mode' => self::options()['mode'], 'hold_expires_at' => $hold_expires, 'created_at' => $now, 'updated_at' => $now], ['%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s']);
+            $inserted = $wpdb->insert($this->table(), ['user_id' => $user->ID, 'email' => sanitize_email($user->user_email), 'phone' => sanitize_text_field($payload['phone'] ?? ''), 'start_at' => $start->format('Y-m-d H:i:s'), 'end_at' => $end->format('Y-m-d H:i:s'), 'duration' => $duration, 'status' => 'pending_payment', 'timezone' => self::options()['timezone'], 'mode' => self::options()['mode'], 'hold_expires_at' => $hold_expires, 'created_at' => $now, 'updated_at' => $now], ['%d', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s']);
             if (!$inserted) return new WP_REST_Response(['message' => 'Unable to reserve this slot.'], 500);
             $id = (int) $wpdb->insert_id;
             $order = wc_create_order(['customer_id' => $user->ID]);
@@ -304,7 +304,7 @@ final class Landing_Bird_Scheduler
             $this->unlock();
         }
     }
-    public function booking_shortcode(): string { $this->assets(); return '<section class="lb-scheduler" data-lb-scheduler><h2>Reserva tu sesión</h2><p class="lb-scheduler__message">Elige una fecha y horario. Necesitarás iniciar sesión para reservar.</p><label>Fecha <input type="date" data-lb-date></label><div data-lb-slots></div></section>'; }
+    public function booking_shortcode(): string { $this->assets(); return '<section class="lb-scheduler" data-lb-scheduler><h2>Reserva tu sesión</h2><p class="lb-scheduler__message">Elige una fecha y horario. Necesitarás iniciar sesión para reservar.</p><label>Fecha <input type="date" data-lb-date></label> <label>Teléfono (opcional) <input type="tel" data-lb-phone autocomplete="tel"></label><div data-lb-slots></div></section>'; }
     public function sessions_shortcode(): string { if(!is_user_logged_in()) return '<p>Inicia sesión para ver tus sesiones.</p>'; $this->assets(); return '<section class="lb-scheduler-sessions" data-lb-sessions><h2>Mis sesiones</h2><div data-lb-session-list>Cargando…</div></section>'; }
     public function bookings_page(): void
     {
