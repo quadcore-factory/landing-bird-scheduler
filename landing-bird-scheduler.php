@@ -17,4 +17,5 @@ define('LB_SCHEDULER_FILE', __FILE__);
 require_once __DIR__ . '/includes/class-landing-bird-scheduler.php';
 
 register_activation_hook(__FILE__, ['Landing_Bird_Scheduler', 'activate']);
+register_deactivation_hook(__FILE__, ['Landing_Bird_Scheduler', 'deactivate']);
 add_action('plugins_loaded', static function () { Landing_Bird_Scheduler::boot(); });
