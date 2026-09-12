@@ -1,0 +1,1 @@
+{"name":"landingbird/scheduler","description":"A WooCommerce-backed WordPress booking calendar.","type":"wordpress-plugin","license":"GPL-2.0-or-later","require":{"php":">=7.4"},"scripts":{"lint":"find . -path './.git' -prune -o -name '*.php' -type f -print0 | xargs -0 -n1 php -l","test":"php tests/test.php"}}

@@ -1,0 +1,110 @@
+<?php
+defined('ABSPATH') || exit;
+
+final class Landing_Bird_Scheduler
+{
+    private const OPTION = 'lb_scheduler_options';
+    private const TABLE_VERSION = '1';
+    private const STATUSES = ['pending_payment','confirmed_paid','confirmed_external','reschedule_requested','rescheduled','refund_requested','refund_pending','refunded','cancelled','expired'];
+
+    public static function defaults(): array
+    {
+        return ['price' => '50.00', 'timezone' => 'America/Mexico_City', 'days' => [1,2,3,4,5], 'start' => '09:00', 'end' => '17:00', 'break_start' => '', 'break_end' => '', 'min_notice' => 4, 'max_days' => 60, 'max_duration' => 90, 'mode' => 'Online or in-person instructions will be provided after payment.', 'overrides' => []];
+    }
+
+    public static function activate(): void
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'lb_scheduler_bookings';
+        $charset = $wpdb->get_charset_collate();
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta("CREATE TABLE {$table} (id bigint(20) unsigned NOT NULL AUTO_INCREMENT,user_id bigint(20) unsigned NOT NULL DEFAULT 0,email varchar(190) NOT NULL,phone varchar(40) NOT NULL DEFAULT '',start_at datetime NOT NULL,end_at datetime NOT NULL,duration smallint unsigned NOT NULL,status varchar(32) NOT NULL,timezone varchar(64) NOT NULL,mode text NOT NULL,order_id bigint(20) unsigned NOT NULL DEFAULT 0,payment_method varchar(80) NOT NULL DEFAULT '',payment_reference varchar(190) NOT NULL DEFAULT '',admin_note text NOT NULL,hold_expires_at datetime NULL,created_at datetime NOT NULL,updated_at datetime NOT NULL,PRIMARY KEY (id),KEY booking_window (start_at,end_at),KEY user_status (user_id,status),KEY order_id (order_id),KEY email (email)) {$charset};");
+        update_option('lb_scheduler_db_version', self::TABLE_VERSION);
+        if (false === get_option(self::OPTION, false)) update_option(self::OPTION, self::defaults());
+    }
+
+    public static function boot(): void
+    {
+        $plugin = new self();
+        add_shortcode('landing_bird_booking', [$plugin, 'booking_shortcode']);
+        add_shortcode('landing_bird_my_sessions', [$plugin, 'sessions_shortcode']);
+        add_action('init', [$plugin, 'register_block']);
+        add_action('admin_menu', [$plugin, 'admin_menu']);
+        add_action('admin_init', [$plugin, 'register_settings']);
+        add_action('rest_api_init', [$plugin, 'register_routes']);
+        add_action('wp_enqueue_scripts', [$plugin, 'assets']);
+        add_action('admin_post_lb_scheduler_admin_booking', [$plugin, 'admin_booking']);
+        add_action('admin_post_lb_scheduler_admin_status', [$plugin, 'admin_status']);
+        add_action('lb_scheduler_anonymize', [$plugin, 'anonymize']);
+        add_action('woocommerce_payment_complete', [$plugin, 'payment_complete']);
+        if (!wp_next_scheduled('lb_scheduler_anonymize')) wp_schedule_event(time() + DAY_IN_SECONDS, 'daily', 'lb_scheduler_anonymize');
+    }
+
+    public static function options(): array { return array_merge(self::defaults(), (array) get_option(self::OPTION, [])); }
+
+    public static function sanitize_options($input): array
+    {
+        $d = self::defaults(); $input = is_array($input) ? $input : [];
+        $tz = is_scalar($input['timezone'] ?? '') ? (string) $input['timezone'] : '';
+        try { new DateTimeZone($tz); } catch (Exception $e) { $tz = $d['timezone']; }
+        $days = array_values(array_intersect([1,2,3,4,5,6,7], array_map('intval', (array) ($input['days'] ?? []))));
+        $time = static function ($v, $fallback) { return is_string($v) && preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $v) ? $v : $fallback; };
+        $price = is_numeric($input['price'] ?? null) ? max(0, round((float) $input['price'], 2)) : (float) $d['price'];
+        $overrides = [];
+        $raw = isset($input['overrides_json']) ? json_decode(wp_unslash((string) $input['overrides_json']), true) : ($input['overrides'] ?? []);
+        foreach ((array) $raw as $date => $open) if (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $date)) $overrides[$date] = !empty($open);
+        return ['price' => number_format($price, 2, '.', ''), 'timezone' => $tz, 'days' => $days ?: $d['days'], 'start' => $time($input['start'] ?? '', $d['start']), 'end' => $time($input['end'] ?? '', $d['end']), 'break_start' => $time($input['break_start'] ?? '', '') === '' ? '' : $time($input['break_start'], ''), 'break_end' => $time($input['break_end'] ?? '', '') === '' ? '' : $time($input['break_end'], ''), 'min_notice' => min(168, max(0, absint($input['min_notice'] ?? $d['min_notice']))), 'max_days' => min(365, max(1, absint($input['max_days'] ?? $d['max_days']))), 'max_duration' => min(480, max(30, absint($input['max_duration'] ?? $d['max_duration']))), 'mode' => sanitize_textarea_field($input['mode'] ?? $d['mode']), 'overrides' => $overrides];
+    }
+
+    public function register_settings(): void { register_setting('lb_scheduler', self::OPTION, ['type'=>'array','sanitize_callback'=>[self::class,'sanitize_options'],'default'=>self::defaults()]); }
+    public function admin_menu(): void { add_options_page('Landing Bird Scheduler','Scheduler','manage_options','landing-bird-scheduler',[$this,'settings_page']); add_menu_page('Bookings','Bookings','manage_options','lb-scheduler-bookings',[$this,'bookings_page'],'dashicons-calendar-alt'); }
+    public function settings_page(): void
+    {
+        if (!current_user_can('manage_options')) return; $o = self::options();
+        echo '<div class="wrap"><h1>Landing Bird Scheduler</h1>';
+        if (!$this->woocommerce_ready()) echo '<div class="notice notice-error"><p>WooCommerce and an active payment gateway are required before paid bookings can be accepted.</p></div>';
+        echo '<form method="post" action="options.php">'; settings_fields('lb_scheduler');
+        $fields = ['price'=>'Session price','timezone'=>'IANA timezone','start'=>'Start time','end'=>'End time','break_start'=>'Optional break start','break_end'=>'Optional break end','min_notice'=>'Minimum notice (hours)','max_days'=>'Maximum days ahead','max_duration'=>'Maximum duration (minutes)','mode'=>'Mode / instructions'];
+        foreach ($fields as $key=>$label) { printf('<p><label><strong>%s</strong><br><input class="regular-text" name="%s[%s]" value="%s"></label></p>',esc_html($label),esc_attr(self::OPTION),esc_attr($key),esc_attr($o[$key])); }
+        printf('<p><label><strong>Date overrides</strong><br><textarea class="large-text" name="%s[overrides_json]" rows="3">%s</textarea><br>JSON map of YYYY-MM-DD to true (open) or false (closed).</label></p>',esc_attr(self::OPTION),esc_textarea(wp_json_encode($o['overrides'])));
+        printf('<p><label><strong>Enabled days</strong><br><input name="%s[days][]" value="1" type="checkbox" %s> Mon <input name="%s[days][]" value="2" type="checkbox" %s> Tue <input name="%s[days][]" value="3" type="checkbox" %s> Wed <input name="%s[days][]" value="4" type="checkbox" %s> Thu <input name="%s[days][]" value="5" type="checkbox" %s> Fri <input name="%s[days][]" value="6" type="checkbox" %s> Sat <input name="%s[days][]" value="7" type="checkbox" %s> Sun</label></p>',self::OPTION,checked(in_array(1,$o['days'],true),true,false),self::OPTION,checked(in_array(2,$o['days'],true),true,false),self::OPTION,checked(in_array(3,$o['days'],true),true,false),self::OPTION,checked(in_array(4,$o['days'],true),true,false),self::OPTION,checked(in_array(5,$o['days'],true),true,false),self::OPTION,checked(in_array(6,$o['days'],true),true,false),self::OPTION,checked(in_array(7,$o['days'],true),true,false)); submit_button(); echo '</form></div>';
+    }
+    public function register_block(): void { register_block_type('landing-bird/scheduler', ['render_callback'=>[$this,'booking_shortcode']]); register_block_type('landing-bird/my-sessions', ['render_callback'=>[$this,'sessions_shortcode']]); }
+    public function assets(): void { wp_enqueue_style('lb-scheduler', plugins_url('assets/css/scheduler.css', LB_SCHEDULER_FILE), [], LB_SCHEDULER_VERSION); wp_enqueue_script('lb-scheduler', plugins_url('assets/js/scheduler.js', LB_SCHEDULER_FILE), [], LB_SCHEDULER_VERSION, true); wp_localize_script('lb-scheduler','LBScheduler',['url'=>esc_url_raw(rest_url('lb-scheduler/v1/')),'nonce'=>wp_create_nonce('wp_rest')]); }
+
+    public function register_routes(): void
+    {
+        register_rest_route('lb-scheduler/v1','/slots', ['methods'=>'GET','callback'=>[$this,'slots'],'permission_callback'=>'__return_true']);
+        register_rest_route('lb-scheduler/v1','/bookings', ['methods'=>'POST','callback'=>[$this,'create_booking'],'permission_callback'=>function(){return is_user_logged_in();}]);
+        register_rest_route('lb-scheduler/v1','/bookings/(?P<id>\d+)/cancel', ['methods'=>'POST','callback'=>[$this,'cancel'],'permission_callback'=>[$this,'owns']]);
+        register_rest_route('lb-scheduler/v1','/bookings/(?P<id>\d+)/reschedule', ['methods'=>'POST','callback'=>[$this,'reschedule'],'permission_callback'=>[$this,'owns']]);
+        register_rest_route('lb-scheduler/v1','/sessions', ['methods'=>'GET','callback'=>[$this,'sessions'],'permission_callback'=>function(){return is_user_logged_in();}]);
+        register_rest_route('lb-scheduler/v1','/admin/bookings', ['methods'=>'POST','callback'=>[$this,'admin_create_booking'],'permission_callback'=>function(){return current_user_can('manage_options');}]);
+        register_rest_route('lb-scheduler/v1','/admin/bookings/(?P<id>\d+)', ['methods'=>'PATCH','callback'=>[$this,'admin_update_booking'],'permission_callback'=>function(){return current_user_can('manage_options');}]);
+    }
+
+    private function woocommerce_ready(): bool { if (!class_exists('WooCommerce') || !function_exists('wc_create_order')) return false; $gateways = WC()->payment_gateways() ? WC()->payment_gateways()->get_available_payment_gateways() : []; return (bool) $gateways; }
+    private function table(): string { global $wpdb; return $wpdb->prefix . 'lb_scheduler_bookings'; }
+    private function now(): DateTimeImmutable { return new DateTimeImmutable('now', new DateTimeZone(self::options()['timezone'])); }
+    private function parsed(string $value): ?DateTimeImmutable { try { return new DateTimeImmutable($value, new DateTimeZone(self::options()['timezone'])); } catch (Exception $e) { return null; } }
+    private function valid_window(DateTimeImmutable $start, int $duration): bool { $o=self::options(); $now=$this->now(); $date=$start->format('Y-m-d'); $open=array_key_exists($date,$o['overrides']) ? $o['overrides'][$date] : in_array((int)$start->format('N'),$o['days'],true); return $duration >= 30 && $duration <= (int)$o['max_duration'] && (int)$start->format('i') % 30 === 0 && $start >= $now->modify('+' . (int)$o['min_notice'] . ' hours') && $start <= $now->modify('+' . (int)$o['max_days'] . ' days') && $open && $start->format('H:i') >= $o['start'] && $start->modify('+' . $duration . ' minutes')->format('H:i') <= $o['end'] && !($o['break_start'] && $o['break_end'] && $start->format('H:i') < $o['break_end'] && $start->modify('+' . $duration . ' minutes')->format('H:i') > $o['break_start']); }
+    private function conflicts(string $start,string $end,int $ignore=0): bool { global $wpdb; return (bool)$wpdb->get_var($wpdb->prepare("SELECT id FROM {$this->table()} WHERE id != %d AND (status IN ('confirmed_paid','confirmed_external','rescheduled') OR (status='pending_payment' AND (hold_expires_at IS NULL OR hold_expires_at >= UTC_TIMESTAMP()))) AND start_at < %s AND end_at > %s LIMIT 1",$ignore,$end,$start)); }
+    public function slots(WP_REST_Request $request): WP_REST_Response { $date=sanitize_text_field((string)$request->get_param('date')); $base=$this->parsed($date.' 00:00:00'); $o=self::options(); $out=[]; if (!$base || (array_key_exists($date,$o['overrides']) ? !$o['overrides'][$date] : !in_array((int)$base->format('N'),$o['days'],true))) return new WP_REST_Response(['slots'=>[]]); for($m=0;$m<480;$m+=30){$s=$base->setTime(0,0)->modify('+' . $m . ' minutes'); foreach([30,60,90] as $d){if($d<=(int)$o['max_duration']&&$this->valid_window($s,$d)&&!$this->conflicts($s->format('Y-m-d H:i:s'),$s->modify('+' . $d . ' minutes')->format('Y-m-d H:i:s'))) $out[]=['start'=>$s->format(DateTimeInterface::ATOM),'duration'=>$d];}} return new WP_REST_Response(['slots'=>$out]); }
+    public function create_booking(WP_REST_Request $request): WP_REST_Response
+    { if(!$this->woocommerce_ready()) return new WP_REST_Response(['message'=>'WooCommerce with an active gateway is required.'],503); $p=(array)$request->get_json_params(); $s=$this->parsed(sanitize_text_field($p['start']??'')); $d=absint($p['duration']??0); if(!$s||!$this->valid_window($s,$d)) return new WP_REST_Response(['message'=>'This slot is not available.'],400); $e=$s->modify('+' . $d . ' minutes'); if($this->conflicts($s->format('Y-m-d H:i:s'),$e->format('Y-m-d H:i:s'))) return new WP_REST_Response(['message'=>'This slot was just taken.'],409); $user=wp_get_current_user(); global $wpdb; $now=current_time('mysql',true); $wpdb->insert($this->table(),['user_id'=>$user->ID,'email'=>sanitize_email($user->user_email),'start_at'=>$s->format('Y-m-d H:i:s'),'end_at'=>$e->format('Y-m-d H:i:s'),'duration'=>$d,'status'=>'pending_payment','timezone'=>self::options()['timezone'],'mode'=>self::options()['mode'],'hold_expires_at'=>gmdate('Y-m-d H:i:s',time()+900),'created_at'=>$now,'updated_at'=>$now],['%d','%s','%s','%s','%d','%s','%s','%s','%s','%s','%s']); $id=(int)$wpdb->insert_id; $order=wc_create_order(['customer_id'=>$user->ID]); if(is_wp_error($order)){ $wpdb->update($this->table(),['status'=>'expired'],['id'=>$id]); return new WP_REST_Response(['message'=>'Unable to start payment.'],500); } $order->add_fee(new WC_Order_Item_Fee(['name'=>'Session '.$d.' minutes','total'=>(float)self::options()['price']])); $order->set_billing_email($user->user_email); $order->update_meta_data('_lb_scheduler_booking_id',$id); $order->calculate_totals(); $order->save(); $wpdb->update($this->table(),['order_id'=>$order->get_id()],['id'=>$id],['%d'],['%d']); do_action('lb_scheduler_booking_created',$id); return new WP_REST_Response(['id'=>$id,'status'=>'pending_payment','order_id'=>$order->get_id(),'payment_url'=>$order->get_checkout_payment_url(),'hold_expires_at'=>gmdate(DateTimeInterface::ATOM,time()+900)],201); }
+
+    public function payment_complete($order_id): void
+    { $order=wc_get_order($order_id); if(!$order) return; $id=(int)$order->get_meta('_lb_scheduler_booking_id'); if(!$id) return; global $wpdb; $row=$wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->table()} WHERE id=%d",$id)); if(!$row) return; $expired=(empty($row->hold_expires_at)||strtotime($row->hold_expires_at)<time()||$this->conflicts($row->start_at,$row->end_at,$id)); $status=$expired?'refund_pending':'confirmed_paid'; $wpdb->update($this->table(),['status'=>$status,'payment_method'=>sanitize_text_field($order->get_payment_method_title()),'updated_at'=>current_time('mysql',true)],['id'=>$id],['%s','%s','%s'],['%d']); if($expired) $order->add_order_note('Scheduler payment arrived after the booking hold expired or the slot was occupied; review refund.'); do_action('lb_scheduler_operational_notice',$id); }
+    public function owns(WP_REST_Request $request): bool { global $wpdb; return is_user_logged_in() && (int)$wpdb->get_var($wpdb->prepare("SELECT user_id FROM {$this->table()} WHERE id=%d",absint($request['id'])))===get_current_user_id(); }
+    public function sessions(): WP_REST_Response { global $wpdb; return new WP_REST_Response(['sessions'=>$wpdb->get_results($wpdb->prepare("SELECT id,start_at,end_at,duration,status,mode FROM {$this->table()} WHERE user_id=%d ORDER BY start_at DESC",get_current_user_id()),ARRAY_A)]); }
+    public function cancel(WP_REST_Request $request): WP_REST_Response { global $wpdb; $id=absint($request['id']); $row=$wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->table()} WHERE id=%d",$id)); $start=$this->parsed($row->start_at); if(!$start||$start < $this->now()->modify('+24 hours')) return new WP_REST_Response(['message'=>'Cancellation closes 24 hours before the session.'],400); $wpdb->update($this->table(),['status'=>'cancelled','updated_at'=>current_time('mysql',true)],['id'=>$id],['%s','%s'],['%d']); return new WP_REST_Response(['status'=>'cancelled']); }
+    public function reschedule(WP_REST_Request $request): WP_REST_Response { global $wpdb; $id=absint($request['id']); $old=$wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->table()} WHERE id=%d",$id)); if(!$old||in_array($old->status,['rescheduled','cancelled','refunded'],true)||$this->parsed($old->start_at)<$this->now()->modify('+24 hours')) return new WP_REST_Response(['message'=>'This booking cannot be rescheduled.'],400); $s=$this->parsed(sanitize_text_field($request->get_param('start'))); if(!$s||!$this->valid_window($s,(int)$old->duration)||$this->conflicts($s->format('Y-m-d H:i:s'),$s->modify('+'.$old->duration.' minutes')->format('Y-m-d H:i:s'),$id)) return new WP_REST_Response(['message'=>'This slot is not available.'],409); $wpdb->update($this->table(),['start_at'=>$s->format('Y-m-d H:i:s'),'end_at'=>$s->modify('+'.$old->duration.' minutes')->format('Y-m-d H:i:s'),'status'=>'rescheduled','updated_at'=>current_time('mysql',true)],['id'=>$id]); return new WP_REST_Response(['status'=>'rescheduled']); }
+    public function admin_create_booking(WP_REST_Request $request): WP_REST_Response { $p=(array)$request->get_json_params(); $s=$this->parsed(sanitize_text_field($p['start']??'')); $d=absint($p['duration']??0); $override=!empty($p['override']); if(!$s||$d<30||$d%30!==0||(!$override&&(!$this->valid_window($s,$d)||$this->conflicts($s->format('Y-m-d H:i:s'),$s->modify('+'.$d.' minutes')->format('Y-m-d H:i:s'))))) return new WP_REST_Response(['message'=>'Invalid or conflicting booking.'],400); $email=sanitize_email($p['email']??''); if(!$email)return new WP_REST_Response(['message'=>'A client email is required.'],400); $user=get_user_by('email',$email); if(!$user)$uid=wp_create_user($email,wp_generate_password(24),$email); else $uid=$user->ID; if(is_wp_error($uid))return new WP_REST_Response(['message'=>'Unable to create client account.'],500); global $wpdb; $now=current_time('mysql',true); $wpdb->insert($this->table(),['user_id'=>$uid,'email'=>$email,'phone'=>sanitize_text_field($p['phone']??''),'start_at'=>$s->format('Y-m-d H:i:s'),'end_at'=>$s->modify('+'.$d.' minutes')->format('Y-m-d H:i:s'),'duration'=>$d,'status'=>'confirmed_external','timezone'=>self::options()['timezone'],'mode'=>self::options()['mode'],'payment_method'=>sanitize_text_field($p['payment_method']??''),'payment_reference'=>sanitize_text_field($p['payment_reference']??''),'admin_note'=>sanitize_textarea_field($p['admin_note']??($override?'Admin override':'')).'','created_at'=>$now,'updated_at'=>$now],['%d','%s','%s','%s','%s','%d','%s','%s','%s','%s','%s','%s','%s','%s']); do_action('lb_scheduler_operational_notice',(int)$wpdb->insert_id); return new WP_REST_Response(['id'=>(int)$wpdb->insert_id,'status'=>'confirmed_external'],201); }
+    public function admin_update_booking(WP_REST_Request $request): WP_REST_Response { global $wpdb; $id=absint($request['id']); $p=(array)$request->get_json_params(); $status=sanitize_key($p['status']??''); if(!in_array($status,self::STATUSES,true))return new WP_REST_Response(['message'=>'Invalid status.'],400); $wpdb->update($this->table(),['status'=>$status,'admin_note'=>sanitize_textarea_field($p['admin_note']??''),'updated_at'=>current_time('mysql',true)],['id'=>$id],['%s','%s','%s'],['%d']); return new WP_REST_Response(['id'=>$id,'status'=>$status]); }
+    public function booking_shortcode(): string { return '<section class="lb-scheduler" data-lb-scheduler><h2>Reserva tu sesión</h2><p class="lb-scheduler__message">Elige una fecha y horario. Necesitarás iniciar sesión para reservar.</p><label>Fecha <input type="date" data-lb-date></label><div data-lb-slots></div></section>'; }
+    public function sessions_shortcode(): string { if(!is_user_logged_in()) return '<p>Inicia sesión para ver tus sesiones.</p>'; return '<section class="lb-scheduler-sessions" data-lb-sessions><h2>Mis sesiones</h2><div data-lb-session-list>Cargando…</div></section>'; }
+    public function bookings_page(): void { if(!current_user_can('manage_options')) return; global $wpdb; $rows=$wpdb->get_results("SELECT * FROM {$this->table()} ORDER BY start_at DESC LIMIT 100"); echo '<div class="wrap"><h1>Bookings</h1><p>Use the REST adapter or this table to review operational bookings. External payment references are recorded without creating a gateway transaction.</p><table class="widefat"><thead><tr><th>ID</th><th>Email</th><th>Start</th><th>Status</th><th>Order</th></tr></thead><tbody>'; foreach($rows as $r) printf('<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td></tr>',$r->id,esc_html($r->email),esc_html($r->start_at),esc_html($r->status),$r->order_id); echo '</tbody></table></div>'; }
+    public function admin_booking(): void { if(!current_user_can('manage_options')||!check_admin_referer('lb_scheduler_admin_booking')) wp_die('Forbidden',403); }
+    public function admin_status(): void { if(!current_user_can('manage_options')||!check_admin_referer('lb_scheduler_admin_status')) wp_die('Forbidden',403); }
+    public function anonymize(): void { global $wpdb; $cutoff=gmdate('Y-m-d H:i:s',time()-YEAR_IN_SECONDS); $wpdb->query($wpdb->prepare("UPDATE {$this->table()} SET email='',phone='',mode='',admin_note='' WHERE created_at < %s AND (email <> '' OR phone <> '')",$cutoff)); }
+}
